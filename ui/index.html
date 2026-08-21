@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VirtualMidiPlayer</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body data-accent="violet">
+  <!-- Свой заголовок окна: системный отключён (decorations: false) -->
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="titlebar__brand" data-tauri-drag-region>
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 18V5.5l10-2v12.2" />
+        <circle cx="6.5" cy="18" r="2.6" />
+        <circle cx="16.5" cy="15.7" r="2.6" />
+      </svg>
+      <span class="titlebar__title" data-tauri-drag-region>VirtualMidiPlayer</span>
+      <span class="badge badge--ghost" id="version"></span>
+    </div>
+
+    <div class="titlebar__spacer" data-tauri-drag-region></div>
+
+    <div class="titlebar__tools">
+      <button class="lang-toggle" id="lang-toggle" title="Язык / Language">
+        <span data-lang="ru">RU</span><span data-lang="en">EN</span>
+      </button>
+      <button class="winbtn" id="win-min" aria-label="Свернуть">
+        <svg viewBox="0 0 12 12"><path d="M2.5 6.5h7" /></svg>
+      </button>
+      <button class="winbtn" id="win-max" aria-label="Развернуть">
+        <svg viewBox="0 0 12 12"><rect x="2.5" y="2.5" width="7" height="7" rx="1.2" /></svg>
+      </button>
+      <button class="winbtn winbtn--close" id="win-close" aria-label="Закрыть">
+        <svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" /></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <!-- ── Плейлист ─────────────────────────────────────────────────────── -->
+    <aside class="panel playlist">
+      <div class="panel__head">
+        <h2 data-i18n="playlist.title">Плейлист</h2>
+        <span class="counter" id="playlist-count">0</span>
+      </div>
+
+      <div class="playlist__actions">
+        <button class="btn btn--primary btn--block" id="add-files">
+          <svg viewBox="0 0 16 16" class="ico"><path d="M8 3.5v9M3.5 8h9" /></svg>
+          <span data-i18n="playlist.add">Добавить MIDI</span>
+        </button>
+      </div>
+
+      <ul class="playlist__items" id="playlist"></ul>
+
+      <div class="playlist__empty" id="playlist-empty">
+        <svg viewBox="0 0 24 24" class="empty-ico"><path d="M9 18V5.5l10-2v12.2" /><circle cx="6.5" cy="18" r="2.6" /><circle cx="16.5" cy="15.7" r="2.6" /></svg>
+        <p data-i18n="playlist.empty">Перетащи .mid файлы сюда<br />или нажми «Добавить»</p>
+      </div>
+    </aside>
+
+    <!-- ── Сцена ─────────────────────────────────────────────────────────── -->
+    <section class="stage">
+      <div class="stage__head">
+        <div class="nowplaying">
+          <div class="nowplaying__label" data-i18n="stage.now">Сейчас играет</div>
+          <h1 class="nowplaying__title" id="song-title" data-i18n="stage.nothing">Ничего не выбрано</h1>
+        </div>
+        <div class="chips" id="song-chips"></div>
+      </div>
+
+      <div class="rollwrap">
+        <canvas id="roll"></canvas>
+
+        <div class="guard-toast" id="guard-toast" hidden>
+          <svg viewBox="0 0 16 16" class="ico"><path d="M8 1.8l6 3v3.6c0 3-2.5 5-6 5.8-3.5-.8-6-2.8-6-5.8V4.8z" /></svg>
+          <span data-i18n="guard.waiting">Ждём окно игры…</span>
+        </div>
+
+        <div class="countdown" id="countdown" hidden>
+          <div class="countdown__num" id="countdown-num">3</div>
+          <div class="countdown__hint" data-i18n="countdown.hint">Переключайся в игру</div>
+        </div>
+      </div>
+
+      <div class="transport">
+        <div class="transport__buttons">
+          <button class="tbtn" id="btn-prev" title="Shift+←">
+            <svg viewBox="0 0 20 20"><path d="M14.5 4.5v11L7 10zM5.5 4.5v11" /></svg>
+          </button>
+          <button class="tbtn tbtn--play" id="btn-play">
+            <svg viewBox="0 0 24 24" class="ico-play"><path d="M8 5.5l11 6.5-11 6.5z" /></svg>
+            <svg viewBox="0 0 24 24" class="ico-pause"><path d="M9 5.5v13M15 5.5v13" /></svg>
+          </button>
+          <button class="tbtn" id="btn-stop">
+            <svg viewBox="0 0 20 20"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5" /></svg>
+          </button>
+          <button class="tbtn" id="btn-next" title="Shift+→">
+            <svg viewBox="0 0 20 20"><path d="M5.5 4.5v11L13 10zM14.5 4.5v11" /></svg>
+          </button>
+        </div>
+
+        <div class="seek">
+          <span class="seek__time" id="time-now">0:00</span>
+          <div class="seek__track" id="seek" role="slider" aria-label="Позиция" tabindex="0">
+            <div class="seek__fill" id="seek-fill"></div>
+            <div class="seek__knob" id="seek-knob"></div>
+          </div>
+          <span class="seek__time seek__time--total" id="time-total">0:00</span>
+        </div>
+
+        <div class="transport__toggles">
+          <button class="tgl" id="btn-loop" data-tip="loop.tip">
+            <svg viewBox="0 0 20 20"><path d="M6 5.5h8a3 3 0 013 3v1M14 14.5H6a3 3 0 01-3-3v-1" /><path d="M12 3.2l2.4 2.3L12 7.8M8 11.9L5.6 14.2 8 16.5" /></svg>
+          </button>
+          <button class="tgl" id="btn-panic" data-tip="panic.tip">
+            <svg viewBox="0 0 20 20"><path d="M10 3.5v7M10 14.2v.6" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="statusbar">
+        <div class="stat">
+          <span class="stat__k" data-i18n="stat.layout">Раскладка</span>
+          <span class="stat__v" id="stat-layout">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat__k" data-i18n="stat.coverage">Покрытие</span>
+          <span class="stat__v" id="stat-coverage">—</span>
+        </div>
+        <div class="stat">
+          <span class="stat__k" data-i18n="stat.transpose">Транспонирование</span>
+          <span class="stat__v" id="stat-transpose">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat__k" data-i18n="stat.speed">Темп</span>
+          <span class="stat__v" id="stat-speed">1.00×</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Настройки ─────────────────────────────────────────────────────── -->
+    <aside class="panel settings">
+      <nav class="tabs" id="tabs">
+        <button class="tab is-active" data-tab="game" data-i18n="tab.game">Игра</button>
+        <button class="tab" data-tab="sound" data-i18n="tab.sound">Звучание</button>
+        <button class="tab" data-tab="keys" data-i18n="tab.keys">Клавиши</button>
+        <button class="tab" data-tab="tracks" data-i18n="tab.tracks">Треки</button>
+      </nav>
+
+      <div class="tabbody">
+        <!-- Игра -->
+        <div class="tabpane is-active" data-pane="game">
+          <div class="field">
+            <label class="field__label" for="layout-select" data-i18n="f.layout">Раскладка клавиш</label>
+            <div class="row">
+              <select id="layout-select" class="input"></select>
+              <button class="btn btn--icon" id="edit-layout" data-tip="f.editLayout">
+                <svg viewBox="0 0 16 16" class="ico"><path d="M11.2 2.6l2.2 2.2-8 8-2.9.7.7-2.9z" /></svg>
+              </button>
+            </div>
+            <p class="hint" id="layout-desc"></p>
+          </div>
+
+          <div class="field">
+            <div class="field__row">
+              <label class="field__label" data-i18n="f.transpose">Транспонирование</label>
+              <output class="field__out" id="out-transpose">0</output>
+            </div>
+            <input type="range" id="transpose" class="range" min="-24" max="24" step="1" value="0" />
+            <label class="check">
+              <input type="checkbox" id="auto-fit" />
+              <span data-i18n="f.autoFit">Подбирать автоматически под раскладку</span>
+            </label>
+          </div>
+
+          <div class="field">
+            <label class="field__label" data-i18n="f.oor">Ноты вне диапазона</label>
+            <div class="seg" id="oor">
+              <button data-val="fold" data-i18n="f.oor.fold">Сдвинуть</button>
+              <button data-val="clamp" data-i18n="f.oor.clamp">Прижать</button>
+              <button data-val="skip" data-i18n="f.oor.skip">Пропустить</button>
+            </div>
+            <p class="hint" data-i18n="f.oor.hint">«Сдвинуть» переносит ноту на целые октавы внутрь диапазона — мелодия сохраняется.</p>
+          </div>
+
+          <div class="field">
+            <div class="field__row">
+              <label class="field__label" data-i18n="f.countdown">Отсчёт перед старта, с</label>
+              <output class="field__out" id="out-countdown">3</output>
+            </div>
+            <input type="range" id="countdown-s" class="range" min="0" max="10" step="1" value="3" />
+          </div>
+
+          <div class="field">
+            <label class="check">
+              <input type="checkbox" id="window-guard" />
+              <span data-i18n="f.guard">Играть только когда игра в фокусе</span>
+            </label>
+            <input type="text" id="window-title" class="input" placeholder="Roblox; Garry's Mod" />
+            <p class="hint" data-i18n="f.guard.hint">Части заголовков окон через «;». Пока нужное окно не в фокусе — время стоит, клавиши не жмутся.</p>
+          </div>
+
+          <div class="field">
+            <label class="check">
+              <input type="checkbox" id="force-en" />
+              <span data-i18n="f.forceEn">Переключать на английскую раскладку</span>
+            </label>
+            <p class="hint" data-i18n="f.forceEn.hint">При русской раскладке игра может получить «й» вместо «q».</p>
+          </div>
+
+          <div class="field">
+            <label class="field__label" data-i18n="f.sendMode">Способ отправки нажатий</label>
+            <div class="seg" id="send-mode">
+              <button data-val="scancode">Scancode</button>
+              <button data-val="virtual">Virtual</button>
+              <button data-val="both" data-i18n="f.sendMode.both">Оба</button>
+            </div>
+            <p class="hint" data-i18n="f.sendMode.hint">Scancode подходит почти всегда. Если игра не реагирует — попробуй «Оба».</p>
+          </div>
+        </div>
+
+        <!-- Звучание -->
+        <div class="tabpane" data-pane="sound">
+          <div class="field">
+            <div class="field__row">
+              <label class="field__label" data-i18n="f.speed">Темп</label>
+              <output class="field__out" id="out-speed">1.00×</output>
+            </div>
+            <input type="range" id="speed" class="range" min="0.25" max="2.5" step="0.01" value="1" />
+            <div class="quickrow" id="speed-presets">
+              <button data-val="0.5">0.5×</button>
+              <button data-val="0.75">0.75×</button>
+              <button data-val="1">1×</button>
+              <button data-val="1.25">1.25×</button>
+              <button data-val="1.5">1.5×</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field__label" data-i18n="f.mode">Как держать клавиши</label>
+            <div class="seg" id="hold-mode">
+              <button data-val="tap" data-i18n="f.mode.tap">Короткий тап</button>
+              <button data-val="hold" data-i18n="f.mode.hold">Держать ноту</button>
+            </div>
+            <p class="hint" data-i18n="f.mode.hint">Большинству игр хватает тапа. «Держать» нужно там, где звук тянется, пока клавиша зажата.</p>
+          </div>
+
+          <div class="field" id="tap-field">
+            <div class="field__row">
+              <label class="field__label" data-i18n="f.tap">Длительность тапа, мс</label>
+              <output class="field__out" id="out-tap">12</output>
+            </div>
+            <input type="range" id="tap-ms" class="range" min="1" max="80" step="1" value="12" />
+          </div>
+
+          <div class="field">
+            <div class="field__row">
+              <label class="field__label" data-i18n="f.chordGap">Разъезд аккорда, мс</label>
+              <output class="field__out" id="out-gap">0</output>
+            </div>
+            <input type="range" id="chord-gap" class="range" min="0" max="40" step="1" value="0" />
+            <p class="hint" data-i18n="f.chordGap.hint">Помогает, если игра глотает одновременные нажатия.</p>
+          </div>
+
+          <div class="field">
+            <div class="field__row">
+              <label class="field__label" data-i18n="f.humanize">Живой разброс, мс</label>
+              <output class="field__out" id="out-humanize">0</output>
+            </div>
+            <input type="range" id="humanize" class="range" min="0" max="60" step="1" value="0" />
+          </div>
+
+          <div class="field">
+            <div class="field__row">
+              <label class="field__label" data-i18n="f.maxChord">Максимум нот в аккорде</label>
+              <output class="field__out" id="out-maxchord">∞</output>
+            </div>
+            <input type="range" id="max-chord" class="range" min="0" max="12" step="1" value="0" />
+            <p class="hint" data-i18n="f.maxChord.hint">0 — без ограничения. При лимите остаются крайние голоса: мелодия и бас.</p>
+          </div>
+
+          <div class="field">
+            <div class="field__row">
+              <label class="field__label" data-i18n="f.minVel">Порог громкости</label>
+              <output class="field__out" id="out-minvel">1</output>
+            </div>
+            <input type="range" id="min-velocity" class="range" min="1" max="80" step="1" value="1" />
+            <p class="hint" data-i18n="f.minVel.hint">Отсекает еле слышные призвуки аранжировки.</p>
+          </div>
+
+          <div class="field">
+            <label class="check">
+              <input type="checkbox" id="ignore-drums" />
+              <span data-i18n="f.drums">Игнорировать барабаны (10-й канал)</span>
+            </label>
+            <label class="check">
+              <input type="checkbox" id="autoplay-next" />
+              <span data-i18n="f.autonext">Автоматически включать следующий трек</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Клавиши -->
+        <div class="tabpane" data-pane="keys">
+          <div class="field">
+            <label class="check">
+              <input type="checkbox" id="hotkeys-enabled" />
+              <span data-i18n="f.hkOn">Глобальные горячие клавиши</span>
+            </label>
+            <p class="hint" data-i18n="f.hk.hint">Работают, даже когда окно свёрнуто и ты в игре. Нажми на поле и задай клавишу.</p>
+          </div>
+
+          <div class="hklist" id="hklist">
+            <div class="hkrow">
+              <span data-i18n="hk.playPause">Играть / пауза</span>
+              <button class="hkbtn" data-hk="play_pause">F5</button>
+            </div>
+            <div class="hkrow">
+              <span data-i18n="hk.stop">Стоп</span>
+              <button class="hkbtn" data-hk="stop">F6</button>
+            </div>
+            <div class="hkrow">
+              <span data-i18n="hk.prev">Предыдущий трек</span>
+              <button class="hkbtn" data-hk="prev">F7</button>
+            </div>
+            <div class="hkrow">
+              <span data-i18n="hk.next">Следующий трек</span>
+              <button class="hkbtn" data-hk="next">F8</button>
+            </div>
+            <div class="hkrow">
+              <span data-i18n="hk.panic">Отпустить все клавиши</span>
+              <button class="hkbtn" data-hk="panic">F9</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field__label" data-i18n="f.accent">Акцент интерфейса</label>
+            <div class="swatches" id="accents">
+              <button data-val="violet" style="--sw:#7c5cff"></button>
+              <button data-val="cyan" style="--sw:#22d3ee"></button>
+              <button data-val="lime" style="--sw:#a3e635"></button>
+              <button data-val="rose" style="--sw:#fb7185"></button>
+              <button data-val="amber" style="--sw:#fbbf24"></button>
+            </div>
+          </div>
+
+          <div class="field">
+            <button class="btn btn--block" id="open-data">
+              <svg viewBox="0 0 16 16" class="ico"><path d="M2 4.5h4.2l1.3 1.6H14v6.4H2z" /></svg>
+              <span data-i18n="f.dataDir">Папка настроек и раскладок</span>
+            </button>
+            <p class="hint" id="data-dir"></p>
+          </div>
+        </div>
+
+        <!-- Треки -->
+        <div class="tabpane" data-pane="tracks">
+          <p class="hint" data-i18n="f.tracks.hint">Отключи партии, которые не нужны — например, второй голос или аккомпанемент. Покрытие и авто-подбор пересчитаются.</p>
+          <div class="tracklist" id="tracklist"></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ── Редактор раскладок ────────────────────────────────────────────── -->
+  <div class="modal" id="editor" hidden>
+    <div class="modal__scrim" id="editor-scrim"></div>
+    <div class="modal__card" id="editor-card">
+      <div class="modal__head">
+        <div>
+          <h2 data-i18n="ed.title">Редактор раскладки</h2>
+          <p class="hint" data-i18n="ed.hint">Нажми на клавишу пианино, затем на своей клавиатуре — назначение запишется. Двойной клик по клавише очищает её.</p>
+        </div>
+        <button class="winbtn" id="editor-close"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" /></svg></button>
+      </div>
+
+      <div class="modal__toolbar">
+        <input type="text" id="ed-name" class="input" placeholder="Название раскладки" />
+        <div class="row">
+          <button class="btn" id="ed-octave-down">− <span data-i18n="ed.octave">окт.</span></button>
+          <span class="badge" id="ed-range">—</span>
+          <button class="btn" id="ed-octave-up">+ <span data-i18n="ed.octave">окт.</span></button>
+        </div>
+        <div class="row">
+          <button class="btn" id="ed-clear" data-i18n="ed.clear">Очистить</button>
+          <button class="btn" id="ed-vp" data-i18n="ed.fillVp">Заполнить как Virtual Piano</button>
+        </div>
+      </div>
+
+      <div class="editorkeys" id="ed-keys"></div>
+
+      <div class="modal__foot">
+        <span class="hint" id="ed-status"></span>
+        <div class="row">
+          <button class="btn" id="ed-delete" data-i18n="ed.delete">Удалить</button>
+          <button class="btn btn--primary" id="ed-save" data-i18n="ed.save">Сохранить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
