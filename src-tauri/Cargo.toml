@@ -1,6 +1,6 @@
 [package]
 name = "virtual-midi-player"
-version = "0.1.0"
+version = "1.0.1"
 edition = "2021"
 description = "MIDI auto-player for in-game pianos (Roblox, Garry's Mod)"
 default-run = "virtual-midi-player"
