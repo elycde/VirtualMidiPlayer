@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["none"],
+    "targets": [],
     "icon": ["icons/icon.ico"],
     "windows": {
       "webviewInstallMode": {
