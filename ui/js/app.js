@@ -346,3 +346,106 @@ function updateCoverageUI(cov) {
 
 initI18n();
 bootstrap();
+
+// Add global keydown bindings
+window.addEventListener('keydown', (e) => {
+    // Ignore input fields and layout editor modal
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (document.getElementById('ed-modal') && !document.getElementById('ed-modal').hidden) return;
+
+    if (e.code === 'Space') {
+        e.preventDefault();
+        invoke('toggle_play');
+    }
+    if (e.code === 'Escape') {
+        e.preventDefault();
+        invoke('stop');
+    }
+});
+
+// Setup theme toggle
+const themeBtn = document.getElementById('theme-toggle');
+if (themeBtn) {
+    let isDark = localStorage.getItem('theme') === 'dark';
+    const applyTheme = (dark) => {
+        if (dark) {
+            document.body.setAttribute('data-theme', 'dark');
+        } else {
+            document.body.removeAttribute('data-theme');
+        }
+        if (window.pianoroll) {
+            window.pianoroll.draw(); // Redraw with new colors
+        }
+    };
+    applyTheme(isDark);
+    themeBtn.addEventListener('click', () => {
+        isDark = !isDark;
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        applyTheme(isDark);
+    });
+}
+
+// Catalog Logic
+const btnCatalog = document.getElementById('btn-catalog');
+const catModal = document.getElementById('catalog-modal');
+const catClose = document.getElementById('catalog-close');
+const catScrim = document.getElementById('catalog-scrim');
+const catSearchBtn = document.getElementById('catalog-btn-search');
+const catSearchInput = document.getElementById('catalog-search');
+const catResults = document.getElementById('catalog-results');
+
+if (btnCatalog) {
+    const closeCat = () => { catModal.hidden = true; };
+    btnCatalog.onclick = () => {
+        catModal.hidden = false;
+        if (catResults.innerHTML.trim() === '') doSearch('');
+    };
+    catClose.onclick = closeCat;
+    catScrim.onclick = closeCat;
+    
+    const doSearch = async (query) => {
+        catResults.innerHTML = '<p class="hint">Загрузка...</p>';
+        try {
+            const raw = await invoke('fetch_catalog', { query });
+            const json = JSON.parse(raw);
+            const tracks = json.result.results;
+            if (!tracks || tracks.length === 0) {
+                catResults.innerHTML = '<p class="hint">Ничего не найдено.</p>';
+                return;
+            }
+            
+            catResults.innerHTML = tracks.map(t => ` 
+                <div class="tracklist__row" style="margin-bottom: 8px;">
+                    <div class="tracklist__name" style="flex:1;"></div>
+                    <button class="btn btn-dl" data-url="" data-name="">Загрузить</button>
+                </div>
+            `).join('');
+            
+            catResults.querySelectorAll('.btn-dl').forEach(btn => {
+                btn.onclick = async () => {
+                    const oldHtml = btn.innerHTML;
+                    btn.innerHTML = '...';
+                    btn.disabled = true;
+                    try {
+                        const dlPath = await invoke('download_midi_curl', { 
+                            url: btn.dataset.url, 
+                            name: btn.dataset.name 
+                        });
+                        appState.playlist.push(dlPath);
+                        renderPlaylist();
+                        btn.innerHTML = '?';
+                    } catch (e) {
+                        console.error(e);
+                        btn.innerHTML = 'Ошибка';
+                    }
+                };
+            });
+            
+        } catch (e) {
+            catResults.innerHTML = '<p class="hint" style="color:#f44336">Ошибка загрузки каталога</p>';
+        }
+    };
+    
+    catSearchBtn.onclick = () => doSearch(catSearchInput.value);
+    catSearchInput.onkeydown = (e) => { if (e.key === 'Enter') doSearch(catSearchInput.value); };
+}

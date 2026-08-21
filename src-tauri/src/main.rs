@@ -69,7 +69,7 @@ fn main() {
             commands::seek,
             commands::panic_release,
             commands::open_data_folder,
-            commands::validate_token,
+            commands::validate_token, commands::fetch_catalog, commands::download_midi_curl, commands::save_downloaded_midi,
         ])
         .run(tauri::generate_context!())
         .expect("не удалось запустить приложение");

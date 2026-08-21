@@ -39,10 +39,30 @@ export class Pianoroll {
         
         if (!this.song) return;
 
-        const kw = w / this.keys;
         const timeWindowMs = 2000; 
+        
+        const keyH = 50;
+        let whiteCount = 0;
+        for(let i=0; i<this.keys; i++) {
+            if (![1,3,6,8,10].includes((this.startKey + i) % 12)) whiteCount++;
+        }
+        const kwWhite = w / (whiteCount || 52);
+        
+        let whiteIdx = 0;
+        let keyPositions = [];
+        for (let i = 0; i < this.keys; i++) {
+            const k = this.startKey + i;
+            const isBlack = [1, 3, 6, 8, 10].includes(k % 12);
+            if (!isBlack) {
+                keyPositions.push({ x: whiteIdx * kwWhite, isBlack, kw: kwWhite, k });
+                whiteIdx++;
+            } else {
+                keyPositions.push({ x: whiteIdx * kwWhite - (kwWhite * 0.35), isBlack, kw: kwWhite * 0.7, k });
+            }
+        }
 
-        this.ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        const isDark = document.body.hasAttribute('data-theme');
+        this.ctx.fillStyle = isDark ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)';
         for (let i = 0; i < this.song.notes.length; i++) {
             const [start, dur, key, vel, track] = this.song.notes[i];
             
@@ -56,20 +76,44 @@ export class Pianoroll {
             const y2 = h - ((start + dur - this.posMs) / timeWindowMs) * h;
             
             const nh = Math.max(2, y1 - y2);
-            this.ctx.fillRect(k * kw, y2 - 20, kw - 1, nh);
+            const pos = keyPositions[k];
+            if (pos) {
+                this.ctx.fillRect(pos.x, y2 - keyH, pos.kw - 1, nh);
+            }
         }
 
-        // Keyboard
-        this.ctx.fillStyle = '#fff';
-        this.ctx.fillRect(0, h - 20, w, 20);
-        this.ctx.fillStyle = '#000';
-        for (let i = 0; i < this.keys; i++) {
-            const k = this.startKey + i;
-            const isBlack = [1, 3, 6, 8, 10].includes(k % 12);
-            if (isBlack) {
-                this.ctx.fillRect(i * kw - (kw * 0.25), h - 20, kw * 0.5, 12);
-            } else {
-                this.ctx.strokeRect(i * kw, h - 20, kw, 20);
+        // Keyboard background
+        this.ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--border').trim() || '#ccc';
+        this.ctx.fillRect(0, h - keyH, w, keyH);
+        
+        for (let pos of keyPositions) {
+            if (!pos.isBlack) {
+                // Draw white key
+                this.ctx.fillStyle = '#fff';
+                this.ctx.fillRect(pos.x + 1, h - keyH, pos.kw - 2, keyH - 2);
+                
+                // Red label for edge keys (Roblox 88)
+                if (pos.k < 36 || pos.k > 96) {
+                    this.ctx.fillStyle = '#f44336';
+                    this.ctx.font = '10px sans-serif';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText("•", pos.x + pos.kw / 2, h - 8);
+                }
+            }
+        }
+        
+        // Draw black keys on top
+        for (let pos of keyPositions) {
+            if (pos.isBlack) {
+                this.ctx.fillStyle = '#222';
+                this.ctx.fillRect(pos.x, h - keyH, pos.kw, keyH * 0.6);
+                
+                if (pos.k < 36 || pos.k > 96) {
+                    this.ctx.fillStyle = '#f44336';
+                    this.ctx.font = '10px sans-serif';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText("•", pos.x + pos.kw / 2, h - keyH + (keyH * 0.6) - 6);
+                }
             }
         }
     }

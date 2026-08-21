@@ -112,12 +112,13 @@ pub fn parse_file(path: &str) -> Result<Song, String> {
 
     // key = (channel, note) -> стек начатых нот
     let mut open: HashMap<(u8, u8), Vec<(u64, u8, u8)>> = HashMap::new();
+    let mut sustain_open: HashMap<u8, u64> = HashMap::new();
     let mut notes: Vec<Note> = Vec::new();
     let mut track_counts = vec![0u32; smf.tracks.len().max(1)];
     let mut track_drums = vec![false; smf.tracks.len().max(1)];
 
     for ev in &merged {
-        // Догоняем время до тика события.
+        // Пропускаем время до события
         if ev.tick > cur_tick {
             cur_us += (ev.tick - cur_tick) as f64 * us_per_tick;
             cur_tick = ev.tick;
@@ -139,6 +140,23 @@ pub fn parse_file(path: &str) -> Result<Song, String> {
                     track_drums[ev.track] = true;
                 }
                 match message {
+                    MidiMessage::Controller { controller, value } if controller.as_int() == 64 => {
+                        let is_down = value.as_int() >= 64;
+                        if is_down {
+                            sustain_open.entry(ch).or_insert(now_us);
+                        } else {
+                            if let Some(start) = sustain_open.remove(&ch) {
+                                notes.push(Note {
+                                    start_us: start,
+                                    dur_us: now_us.saturating_sub(start).max(1),
+                                    key: 255,
+                                    vel: 100,
+                                    track: ev.track as u8,
+                                    channel: ch,
+                                });
+                            }
+                        }
+                    }
                     MidiMessage::NoteOn { key, vel } if vel.as_int() > 0 => {
                         open.entry((ch, key.as_int()))
                             .or_default()
@@ -169,7 +187,7 @@ pub fn parse_file(path: &str) -> Result<Song, String> {
 
     let end_us = cur_us as u64;
 
-    // Ноты без NoteOff закрываем концом файла.
+    // Закрываем висящие ноты в конце.
     for ((ch, key), stack) in open {
         for (start, vel, track) in stack {
             notes.push(Note {
@@ -182,6 +200,18 @@ pub fn parse_file(path: &str) -> Result<Song, String> {
             });
             track_counts[track as usize] += 1;
         }
+    }
+    
+    // Закрываем висящий сустейн
+    for (ch, start) in sustain_open {
+        notes.push(Note {
+            start_us: start,
+            dur_us: end_us.saturating_sub(start).max(1),
+            key: 255,
+            vel: 100,
+            track: 0,
+            channel: ch,
+        });
     }
 
     if notes.is_empty() {

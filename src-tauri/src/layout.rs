@@ -190,23 +190,23 @@ fn vp61_mapping() -> BTreeMap<u8, String> {
 }
 
 fn roblox_61() -> Layout {
+    let mut mapping = vp61_mapping();
+    mapping.insert(255, "space".to_string());
     Layout {
         id: "roblox_61".into(),
         name: "Roblox — Virtual Piano (61)".into(),
         description: "Классическая раскладка virtualpiano.net. Подходит для Roblox Piano, \
-                      Got Talent и большинства онлайн-пианино. Диапазон C2–C7."
+                      Got Talent и большинства онлайн-пианино. Диапазон C2–C7. \
+                      Сустейн — Пробел."
             .into(),
         builtin: true,
-        mapping: vp61_mapping(),
+        mapping,
     }
 }
 
 fn roblox_88() -> Layout {
     let mut mapping = vp61_mapping();
 
-    // Нижние 15 нот (21..35) и верхние 12 (97..108) в 88-клавишных пианино
-    // обычно вешают на модификатор. Единого стандарта нет — конкретная игра
-    // может ждать другое, поэтому раскладка открыта для правки в редакторе.
     for note in 21u8..VP61_BASE {
         if let Some(tok) = mapping.get(&(note + 12)).cloned() {
             mapping.insert(note, format!("ctrl+{tok}"));
@@ -214,16 +214,16 @@ fn roblox_88() -> Layout {
     }
     for note in 97u8..=108 {
         if let Some(tok) = mapping.get(&(note - 12)).cloned() {
-            mapping.insert(note, format!("alt+{tok}"));
+            mapping.insert(note, format!("ctrl+{tok}"));
         }
     }
+    mapping.insert(255, "space".to_string());
 
     Layout {
         id: "roblox_88".into(),
-        name: "Roblox — 88 клавиш (Ctrl/Alt)".into(),
-        description: "Virtual Piano плюс крайние октавы: низ через Ctrl, верх через Alt. \
-                      Конкретная игра может использовать другие модификаторы — проверь и \
-                      поправь в редакторе."
+        name: "Roblox — 88 нот (Ctrl)".into(),
+        description: "Virtual Piano плюс крайние октавы через Ctrl. \
+                      Сустейн — Пробел."
             .into(),
         builtin: true,
         mapping,

@@ -42,4 +42,5 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/virtual-midi-player.exe
           generate_release_notes: true

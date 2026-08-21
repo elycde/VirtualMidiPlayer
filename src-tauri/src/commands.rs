@@ -362,6 +362,65 @@ pub fn validate_token(token: String) -> bool {
     parse_token(&token).is_some()
 }
 
+#[tauri::command]
+pub fn save_downloaded_midi(state: State<AppState>, name: String, data: Vec<u8>) -> Result<String, String> {
+    let mut path = state.paths.root.clone();
+    path.push("songs");
+    let _ = std::fs::create_dir_all(&path);
+    
+    let safe_name = name.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-' && c != ' ', "_");
+    path.push(format!("{}.mid", safe_name));
+    
+    std::fs::write(&path, data).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn fetch_catalog(query: String) -> Result<String, String> {
+    let url = if query.is_empty() {
+        "https://bitmidi.com/api/tracks?orderBy=plays&limit=20".to_string()
+    } else {
+        // simple url encode
+        let q = query.replace(" ", "%20");
+        format!("https://bitmidi.com/api/tracks?q={}&limit=20", q)
+    };
+    
+    let output = std::process::Command::new("curl")
+        .arg("-s")
+        .arg(&url)
+        .output()
+        .map_err(|e| e.to_string())?;
+        
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[tauri::command]
+pub fn download_midi_curl(state: State<'_, AppState>, url: String, name: String) -> Result<String, String> {
+    let mut path = state.paths.root.clone();
+    path.push("songs");
+    let _ = std::fs::create_dir_all(&path);
+    
+    let safe_name = name.replace(|c: char| !c.is_alphanumeric() && c != '-' && c != ' ', "_");
+    path.push(format!("{}.mid", safe_name));
+    
+    let full_url = if url.starts_with('/') { format!("https://bitmidi.com{}", url) } else { url };
+    
+    let output = std::process::Command::new("curl")
+        .arg("-s")
+        .arg("-L")
+        .arg("-o")
+        .arg(path.to_str().unwrap())
+        .arg(&full_url)
+        .output()
+        .map_err(|e| e.to_string())?;
+        
+    if !output.status.success() {
+        return Err("Download failed".to_string());
+    }
+    
+    Ok(path.to_string_lossy().to_string())
+}
+
 // ── Вспомогательное ────────────────────────────────────────────────────────────
 
 /// Ноты песни с учётом заглушённых треков и барабанов — то, что реально пойдёт

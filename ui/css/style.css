@@ -12,7 +12,22 @@
   --border-hover: rgba(0, 0, 0, 0.18);
   --hover: rgba(0, 0, 0, 0.05);
   --active: rgba(0, 0, 0, 0.1);
-  
+}
+
+body[data-theme="dark"] {
+  --bg: #0f0f13;
+  --panel: rgba(30, 30, 35, 0.6);
+  --panel-solid: #1e1e23;
+  --text: #ffffff;
+  --text-sec: #a0a0ab;
+  --text-hint: #6e6e77;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.15);
+  --hover: rgba(255, 255, 255, 0.06);
+  --active: rgba(255, 255, 255, 0.03);
+}
+
+:root {
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -120,6 +135,7 @@ html[lang="en"] [data-lang="ru"] { display: none; }
   overflow: hidden;
   position: relative;
   box-shadow: 0 8px 32px rgba(0,0,0,0.05);
+  min-height: 250px;
 }
 
 /* ── Playlist ── */
