@@ -23,8 +23,11 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0.0"
+        run: cargo binstall -y tauri-cli@^2.0.0
 
       - name: Build App
         run: cd src-tauri && cargo tauri build
