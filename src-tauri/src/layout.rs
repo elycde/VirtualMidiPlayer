@@ -33,8 +33,8 @@ impl ResolvedLayout {
                 strokes.insert(*note, ks);
             }
         }
-        let min_note = strokes.keys().copied().min().unwrap_or(60);
-        let max_note = strokes.keys().copied().max().unwrap_or(60);
+        let min_note = strokes.keys().copied().filter(|&k| k != 255).min().unwrap_or(60);
+        let max_note = strokes.keys().copied().filter(|&k| k != 255).max().unwrap_or(60);
         Self { strokes, min_note, max_note }
     }
 
@@ -281,14 +281,14 @@ mod tests {
     #[test]
     fn vp61_covers_61_notes_from_c2() {
         let l = roblox_61();
-        assert_eq!(l.mapping.len(), 61);
+        assert_eq!(l.mapping.len(), 62); // 61 нота + спец-клавиша rest (255)
         assert_eq!(l.mapping.get(&36).unwrap(), "1");
         assert_eq!(l.mapping.get(&37).unwrap(), "!"); // C#2 = Shift+1
         assert_eq!(l.mapping.get(&60).unwrap(), "t"); // C4 (middle C)
         assert_eq!(l.mapping.get(&96).unwrap(), "m"); // C7
         let r = ResolvedLayout::from_layout(&l);
-        assert_eq!(r.strokes.len(), 61);
-        assert_eq!((r.min_note, r.max_note), (36, 96));
+        assert_eq!(r.strokes.len(), 62);
+        assert_eq!((r.min_note, r.max_note), (36, 96)); // 255 не считается нотой
     }
 
     #[test]

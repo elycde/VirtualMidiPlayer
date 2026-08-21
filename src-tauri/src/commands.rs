@@ -270,6 +270,56 @@ pub fn pick_midi_files(app: AppHandle) -> Vec<String> {
     result
 }
 
+fn is_midi_path(path: &std::path::Path) -> bool {
+    let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+        return false;
+    };
+    let ext = ext.to_lowercase();
+    path.is_file() && matches!(ext.as_str(), "mid" | "midi" | "rmi")
+}
+
+/// Фильтрует перетащенные пути, оставляя только MIDI-файлы.
+#[tauri::command]
+pub fn expand_midi_paths(paths: Vec<String>) -> Vec<String> {
+    let mut result: Vec<String> = paths
+        .into_iter()
+        .filter(|p| is_midi_path(std::path::Path::new(p)))
+        .collect();
+    result.sort();
+    result
+}
+
+/// Временная диагностика: фронтенд пишет свои события в общий vmp_debug.log.
+#[tauri::command]
+pub fn dbg_front(msg: String) {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let path = std::env::temp_dir().join("vmp_debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        use std::io::Write;
+        let _ = writeln!(f, "{ts} FRONT {msg}");
+    }
+}
+
+/// Все MIDI-файлы из папки `songs/` — для кнопки обновления плейлиста.
+#[tauri::command]
+pub fn rescan_songs(state: State<AppState>) -> Vec<String> {
+    let mut dir = state.paths.root.clone();
+    dir.push("songs");
+    let mut result: Vec<String> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| is_midi_path(p))
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    result.sort();
+    result
+}
+
 #[tauri::command]
 pub fn load_song(state: State<AppState>, path: String) -> Result<LoadResult, String> {
     let song = Arc::new(midi::parse_file(&path)?);

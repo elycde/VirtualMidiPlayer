@@ -109,6 +109,20 @@ impl PlayerHandle {
     }
 }
 
+/// Временная диагностика «почему дорожка прыгает в начало»:
+/// лог в %TEMP%\vmp_debug.log. Убрать, когда причина найдена.
+fn dbg_log(msg: &str) {
+    use std::io::Write;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let path = std::env::temp_dir().join("vmp_debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "{ts} {msg}");
+    }
+}
+
 /// Крошечный xorshift — нужен только для «человеческого» разброса тайминга,
 /// тянуть для этого крейт rand незачем.
 struct Rng(u64);
@@ -163,9 +177,13 @@ fn build_events(
         if n.vel < settings.min_velocity {
             continue;
         }
-        let Some(key) = map_note(layout, n.key as i32 + settings.transpose, settings.out_of_range)
-        else {
-            continue;
+        let key = if n.key == 255 {
+            255
+        } else {
+            let Some(k) = map_note(layout, n.key as i32 + settings.transpose, settings.out_of_range) else {
+                continue;
+            };
+            k
         };
         picked.push((n.start_us, n.dur_us, key, n.vel));
     }
@@ -261,6 +279,8 @@ struct Engine {
 
     last_tick: Instant,
     last_guard_check: Instant,
+    last_dbg: Instant,
+    fires_logged: u32,
 }
 
 impl Engine {
@@ -286,8 +306,8 @@ impl Engine {
             &mut self.rng,
         );
 
-        // Кэш нажатий по номеру ноты.
-        self.strokes = vec![None; 128];
+        // Кэшируем массив для быстрых лукапов.
+        self.strokes = vec![None; 256];
         for (note, ks) in &self.layout.strokes {
             self.strokes[*note as usize] = Some(*ks);
         }
@@ -333,7 +353,11 @@ impl Engine {
         if self.events.is_empty() {
             return;
         }
-        if self.position_us >= self.total_us() {
+        // Сброс в начало — только если реально доиграли до конца. Порог с
+        // запасом: finish() ставит позицию ровно в total_us(), а хвост песни
+        // может быть длиннее последнего события. Пауза где попало до конца
+        // обязана возобновляться с места паузы, а не с нуля.
+        if self.position_us + Duration::from_millis(500).as_micros() as u64 >= self.total_us() {
             self.position_us = 0;
             self.reindex();
         }
@@ -348,7 +372,9 @@ impl Engine {
 
         self.playing = true;
         self.guard_blocked = false;
+        self.fires_logged = 0;
         self.reanchor();
+        dbg_log(&format!("play from {}us (events={})", self.position_us, self.events.len()));
         self.emit_tick();
     }
 
@@ -406,6 +432,7 @@ impl Engine {
         }
         self.playing = false;
         self.all_off();
+        dbg_log(&format!("pause at {}us", self.position_us));
         self.emit_tick();
     }
 
@@ -415,11 +442,13 @@ impl Engine {
         self.idx = 0;
         self.guard_blocked = false;
         self.all_off();
+        dbg_log("stop (reset to 0) + Stopped");
         self.emit_tick();
         (self.sink)(PlayerEvent::Stopped);
     }
 
     fn seek(&mut self, us: u64) {
+        dbg_log(&format!("seek {}us", us));
         self.position_us = us.min(self.total_us());
         self.all_off();
         self.reindex();
@@ -431,6 +460,20 @@ impl Engine {
 
     /// Обрабатывает команду. `false` — пора выходить из потока.
     fn handle(&mut self, cmd: Cmd) -> bool {
+        let cmd_name = match &cmd {
+            Cmd::Load(_) => "Load(song)".to_string(),
+            Cmd::SetLayout(_) => "SetLayout".to_string(),
+            Cmd::SetSettings(_) => "SetSettings".to_string(),
+            Cmd::SetMuted(_) => "SetMuted".to_string(),
+            Cmd::Play => "Play".to_string(),
+            Cmd::Pause => "Pause".to_string(),
+            Cmd::TogglePlay => "TogglePlay".to_string(),
+            Cmd::Stop => "Stop".to_string(),
+            Cmd::Seek(us) => format!("Seek({us})"),
+            Cmd::Panic => "Panic".to_string(),
+            Cmd::Shutdown => "Shutdown".to_string(),
+        };
+        dbg_log(&format!("cmd {cmd_name}"));
         match cmd {
             Cmd::Load(song) => {
                 self.all_off();
@@ -541,6 +584,7 @@ impl Engine {
         let should_block = !in_target_window;
         if should_block != self.guard_blocked {
             self.guard_blocked = should_block;
+            dbg_log(&format!("guard blocked={} (fg={:?})", should_block, winutil::foreground_window_title()));
             if should_block {
                 self.all_off();
             } else {
@@ -551,6 +595,7 @@ impl Engine {
     }
 
     fn run(&mut self) {
+        dbg_log("=== engine thread started ===");
         winutil::boost_thread_priority();
 
         loop {
@@ -613,6 +658,13 @@ impl Engine {
                 self.sync_position();
                 self.emit_tick();
             }
+            if self.last_dbg.elapsed() >= Duration::from_millis(500) {
+                self.last_dbg = Instant::now();
+                dbg_log(&format!(
+                    "tick pos={}us playing={} guard={}",
+                    self.position_us, self.playing, self.guard_blocked
+                ));
+            }
         }
 
         self.all_off();
@@ -645,6 +697,27 @@ impl Engine {
             self.idx += 1;
         }
 
+        if self.fires_logged < 80 {
+            self.fires_logged += 1;
+            let fmt_ks = |ks: &KeyStroke| {
+                format!(
+                    "vk{:X}{}{}{}",
+                    ks.key.vk,
+                    if ks.shift { "+S" } else { "" },
+                    if ks.ctrl { "+C" } else { "" },
+                    if ks.alt { "+A" } else { "" }
+                )
+            };
+            let on_s: Vec<String> = ons.iter().map(fmt_ks).collect();
+            let off_s: Vec<String> = offs.iter().map(fmt_ks).collect();
+            dbg_log(&format!(
+                "fire#{} t={}us on=[{}] offs=[{}]",
+                self.fires_logged,
+                now_t,
+                on_s.join(","),
+                off_s.join(",")
+            ));
+        }
         for ks in &offs {
             self.keys.release(ks);
         }
@@ -663,6 +736,7 @@ impl Engine {
     }
 
     fn finish(&mut self) {
+        dbg_log(&format!("finish loop={} pos={}", self.settings.loop_song, self.position_us));
         self.all_off();
         if self.settings.loop_song {
             self.position_us = 0;
@@ -717,6 +791,8 @@ where
                 shared_playing,
                 last_tick: Instant::now(),
                 last_guard_check: Instant::now(),
+                last_dbg: Instant::now(),
+                fires_logged: 0,
             };
             engine.run();
         })
